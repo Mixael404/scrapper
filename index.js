@@ -1,13 +1,3 @@
-/*
-Рабочие ресурсы
-https://www.jpost.com/israel-news
-https://news.israelinfo.co.il/
-
-?? 
-https://www.haaretz.com/israel-news
-https://mignews.com/news/israel/?page=1
-*/
-
 import * as cheerio from 'cheerio';
 import { getPageContent } from "./app/scrap.js";
 import { postMessage } from './app/telegram.js';
@@ -19,6 +9,7 @@ const FILE_PATH = "last-message.txt";
 
 async function performScraping(url, lastMsg) {
     const content = await getPageContent(url)
+
     const $ = cheerio.load(content)
     const newsBlock = $('.news-announce.row')
     const newsArr = []
@@ -27,9 +18,7 @@ async function performScraping(url, lastMsg) {
     for(let i = 0; i < 3; i++){
         firstPostsTitles += $(newsBlock[i]).find('a.parent').text()
     }
-
     let i = 0
-
     for (const news of newsBlock) {
 
         if(i > 4){
@@ -37,6 +26,8 @@ async function performScraping(url, lastMsg) {
         }
 
         const newsTitle = $(news).find('a.parent').text()
+
+        const newsImgPath = $(news).find('.img-fluid').attr("src")
         const newsHref = $(news).find('a.parent').attr("href")
         const postInfo = []
         postInfo.push(newsTitle)
@@ -53,11 +44,19 @@ async function performScraping(url, lastMsg) {
                 if(text.name === 'div'){
                     continue
                 }
-                if(text.children[0]?.data){
-                    fullText += `${text.children[0]?.data}\n\n`
+                if(text.children && text.children.length){
+                    for (const element of text.children) {
+                        if(element.type === 'text') {
+                            fullText += `${element.data} `
+                        } else if(element.name === 'a'){
+                            fullText += `${element.children[0].data} `
+                        }
+                    }
                 }
+                fullText += "\n\n"
             }
             postInfo.push(fullText)
+            postInfo.push(newsImgPath)
             newsArr.push(postInfo)
         }
 
@@ -71,7 +70,6 @@ async function performScraping(url, lastMsg) {
 }
 
 
-
 async function getSummaryFromGPT(lastMsg){
     const news = await performScraping(URL, lastMsg)
 
@@ -79,7 +77,6 @@ async function getSummaryFromGPT(lastMsg){
         return false
     }
 
-    // TODO: Перефразировать заголовок
     const titleRequests = news.map((item) => {
         return generateRequestTextForTitle(item[0])
     })
@@ -93,18 +90,11 @@ async function getSummaryFromGPT(lastMsg){
 
 
     for(let i = 0; i < requests.length; i++){
-        const titleResponse = await makeRequest(titleRequests[i])
+        const titleResponse = await makeRequest(titleRequests[i], "gpt-4-turbo", 300)
         postsTitleResponses.push(titleResponse)
-        const bodyResponse = await makeRequest(requests[i])
+        const bodyResponse = await makeRequest(requests[i], "gpt-3.5-turbo", 1000)
         postsBodyResponses.push(bodyResponse)
     }
-
-    // TODO: Переписать на обычный for, брать один индекс из двух массивов - делать запрос на title
-    // for (const item of requests) {
-    //     const response = await makeRequest(item)
-    //     postsBodyResponses.push(response)
-    // }
-
     news.forEach((item, index) => {
         item[0] = postsTitleResponses[index]
         item[1] = postsBodyResponses[index]
@@ -114,15 +104,17 @@ async function getSummaryFromGPT(lastMsg){
 
 async function main(){
     const data = fs.readFileSync(FILE_PATH, 'utf-8');
-    const news = await getSummaryFromGPT(data)
+    const news = await getSummaryFromGPT(data);
     if(!news){
         console.log("Новых новостей пока нет!");
         return
     }
+    // console.log(news);
     news.forEach(item => {
-        postMessage([item[0], item[1]].join('\n\n'))
+        postMessage([item[0], item[1], item[2]].join('\n\n'))
     })
 
 }
 
-main()
+main();
+// performScraping(URL, '«Гистадрут» угрожает трудовым конфликтом в автобусной компании «Дан»')
