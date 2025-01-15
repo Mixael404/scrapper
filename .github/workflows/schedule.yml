@@ -27,3 +27,20 @@ jobs:
         run: |
           echo "Starting the script..."
           node index.js
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      # 6. Проверка изменений и коммит
+      - name: Commit and Push Changes
+        run: |
+          # Проверяем, есть ли изменения
+          git diff --quiet || (
+            git add . &&
+            git commit -m "Update files via GitHub Actions" &&
+            git push
+          )
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
